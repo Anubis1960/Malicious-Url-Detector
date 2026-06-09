@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 import socket
 import ssl
@@ -78,12 +78,10 @@ def check_domain_age(url):
 
         domain_info = whois.whois(domain)
 
-        if domain_info.creation_date:
-            creation_date = domain_info.creation_date
-            if isinstance(creation_date, list):
-                creation_date = creation_date[0]
+        if domain_info['creation_date']:
+            creation_date = domain_info['creation_date']
 
-            age_days = (datetime.now() - creation_date).days
+            age_days = (datetime.now(timezone.utc) - creation_date).days
 
             if age_days < 30:
                 return {
