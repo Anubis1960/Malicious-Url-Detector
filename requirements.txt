@@ -1,3 +1,9 @@
+selenium~=4.44.0
+tldextract~=5.3.1
+whois~=1.20240129.2
 joblib~=1.5.3
+numpy~=2.4.6
 pandas~=3.0.3
 scikit-learn~=1.9.0
+requests~=2.34.2
+python-dotenv~=1.2.2
