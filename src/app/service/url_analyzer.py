@@ -30,17 +30,6 @@ def analyze_url_structure(url):
         issues.append(f"Many subdomains ({subdomain_count})")
         score_deduction += 5
 
-    # Check for suspicious keywords in URL
-    suspicious_keywords = ['login', 'verify', 'account', 'secure', 'update',
-                           'confirm', 'signin', 'banking', 'paypal', 'apple',
-                           'microsoft', 'amazon', 'google', 'security']
-
-    url_lower = url.lower()
-    found_keywords = [kw for kw in suspicious_keywords if kw in url_lower]
-    if found_keywords:
-        issues.append(f"Suspicious keywords detected: {', '.join(found_keywords[:3])}")
-        score_deduction += 10
-
     # Check for excessive URL length
     if len(url) > 100:
         issues.append(f"Unusually long URL ({len(url)} characters)")
@@ -140,7 +129,7 @@ def check_ssl_tls(url):
             }
         elif days_until_expiry < 30:
             return {
-                'score_deduction': 8,
+                'score_deduction': 5,
                 'has_ssl': True,
                 'valid': True,
                 'assessment': 'SSL certificate expiring soon',
@@ -191,8 +180,7 @@ def get_severity_level(score):
         return "CRITICAL RISK", "Very Dangerous"
 
 
-def generate_detailed_report(url, analysis_results):
-    """Generate comprehensive HTML/JSON report"""
+def generate_report(url, analysis_results):
     report = {
         'url': url,
         'timestamp': datetime.now().isoformat(),
@@ -208,22 +196,6 @@ def generate_detailed_report(url, analysis_results):
         if component not in ['final_score', 'severity', 'risk_level', 'summary']:
             report['detailed_findings'][component] = results
 
-    # Generate recommendations
-    recommendations = []
-    if analysis_results.get('url_structure', {}).get('issues'):
-        recommendations.append("Review URL structure - contains suspicious patterns")
-    if analysis_results.get('homoglyphs', {}).get('has_homoglyphs'):
-        recommendations.append("Domain contains homoglyph characters - potential spoofing attempt")
-    if analysis_results.get('virustotal', {}).get('malicious_count', 0) > 0:
-        recommendations.append(
-            f"VirusTotal detected {analysis_results['virustotal']['malicious_count']} malicious engines - avoid this URL")
-    if analysis_results.get('domain_age', {}).get('age_days', 0) < 30:
-        recommendations.append("Domain is very new - exercise caution")
-    if not analysis_results.get('ssl_tls', {}).get('has_ssl', False):
-        recommendations.append("No valid SSL certificate - data transmission not secure")
-
-    report['recommendations'] = recommendations
-
     return report
 
 
@@ -237,9 +209,9 @@ def generate_summary(scores, final_score, severity):
         summary_parts.append(
             f"VirusTotal: {vt['malicious_count']} security vendors flagged this URL as malicious")
     elif vt['suspicious_count'] > 0:
-        summary_parts.append(f"⚡ VirusTotal: {vt['suspicious_count']} vendors found suspicious activity")
+        summary_parts.append(f"VirusTotal: {vt['suspicious_count']} vendors found suspicious activity")
     else:
-        summary_parts.append("✅ VirusTotal: No security vendors flagged this URL")
+        summary_parts.append("VirusTotal: No security vendors flagged this URL")
 
     # ML findings
     ml = scores['ml_prediction']
@@ -267,7 +239,7 @@ def generate_summary(scores, final_score, severity):
     # SSL/TLS
     ssl = scores['ssl_tls']
     if not ssl.get('has_ssl', False):
-        summary_parts.append("🔒 No valid SSL certificate found (security risk)")
+        summary_parts.append("No valid SSL certificate found (security risk)")
 
     # Homoglyphs
     if scores['homoglyphs']['has_homoglyphs']:
@@ -391,7 +363,7 @@ class URLSecurityAnalyzer:
         }
 
         # Generate detailed report
-        detailed_report = generate_detailed_report(url, results)
+        detailed_report = generate_report(url, results)
 
         return detailed_report
 
@@ -402,9 +374,8 @@ def analyze(url):
     report = analyzer.analyze(url)
 
     # Print comprehensive report
-    print("\n" + "=" * 80)
     print(f"URL SECURITY ANALYSIS REPORT")
-    print("=" * 80)
+    print("\n")
     print(f"URL: {report['url']}")
     print(f"Timestamp: {report['timestamp']}")
     print(f"\nFINAL SCORE: {report['final_score']}/100")
@@ -412,29 +383,20 @@ def analyze(url):
     print(f"SEVERITY: {report['severity']}")
     print(f"\nSUMMARY: {report['summary']}")
 
-    print("\n" + "-" * 40)
+    print("\n")
     print("DETAILED FINDINGS:")
-    print("-" * 40)
+    print("\n")
 
     for category, findings in report['detailed_findings'].items():
         print(f"\n{category.upper().replace('_', ' ')}:")
         if isinstance(findings, dict):
             for key, value in findings.items():
                 if value and key not in ['issues']:
-                    print(f"  • {key.replace('_', ' ').title()}: {value}")
+                    print(f"  {key.replace('_', ' ').title()}: {value}")
             if 'issues' in findings and findings['issues']:
-                print("  • Issues detected:")
+                print("  Issues detected:")
                 for issue in findings['issues'][:3]:  # Show top 3 issues
-                    print(f"    - {issue}")
-
-    if report['recommendations']:
-        print("\n" + "-" * 40)
-        print("RECOMMENDATIONS:")
-        print("-" * 40)
-        for i, rec in enumerate(report['recommendations'], 1):
-            print(f"{i}. {rec}")
-
-    print("\n" + "=" * 80)
+                    print(f"    {issue}")
 
     return report['final_score']
 
