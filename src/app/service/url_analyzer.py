@@ -188,12 +188,13 @@ def generate_report(url, analysis_results):
         'severity': analysis_results['severity'],
         'risk_level': analysis_results['risk_level'],
         'summary': analysis_results['summary'],
-        'detailed_findings': {}
+        'detailed_findings': {},
+        'component_scores': analysis_results.get('component_scores', {})
     }
 
     # Add each component's findings
     for component, results in analysis_results.items():
-        if component not in ['final_score', 'severity', 'risk_level', 'summary']:
+        if component not in ['final_score', 'severity', 'risk_level', 'summary', 'component_scores']:
             report['detailed_findings'][component] = results
 
     return report
@@ -250,46 +251,85 @@ def generate_summary(scores, final_score, severity):
 
 class URLSecurityAnalyzer:
     def __init__(self):
+        """
+        Weights define how much each component affects the final score (as percentages).
+        Higher weight = more impact on final score.
+        """
         self.score_weights = {
-            'virustotal': 35,
-            'ml_prediction': 25,
-            'homoglyphs': 15,
-            'url_structure': 10,
-            'domain_age': 5,
-            'ssl_tls': 5,
-            'blacklists': 5
+            'virustotal': 35,  # Reputation data is most important
+            'ml_prediction': 25,  # ML model detection
+            'homoglyphs': 15,  # Domain spoofing detection
+            'url_structure': 10,  # Structural red flags
+            'ssl_tls': 8,  # Certificate validation
+            'domain_age': 5,  # Domain age (least important)
+            'blacklists': 2  # Blacklist checks (reserved for future use)
         }
-        self.max_score = 100
+
+        # Verify weights sum to 100
+        total_weight = sum(self.score_weights.values())
+        if total_weight != 100:
+            raise ValueError(f"Score weights must sum to 100, got {total_weight}")
+
+    def _normalize_to_score(self, deduction, max_deduction):
+        """
+        Convert a deduction value (0 to max_deduction) into a 0-100 score.
+        Score of 100 = safe/benign, Score of 0 = most dangerous
+        """
+        if max_deduction <= 0:
+            return 100
+        # Deduction as percentage, then convert to safety score
+        percentage_deduction = min(deduction, max_deduction) / max_deduction
+        return 100 - (percentage_deduction * 100)
 
     def calculate_final_score(self, scores):
-        """Calculate weighted final score"""
-        weighted_score = 100
+        """
+        Calculate weighted final score using normalized component scores.
 
-        # VirusTotal contribution (weighted)
+        Process:
+        1. Normalize each component to 0-100 scale
+        2. Apply weight to each component
+        3. Sum weighted scores for final result
+        """
+        component_scores = {}
+        weighted_sum = 0
+
+        # VirusTotal (max deduction: 40)
         vt_deduction = scores.get('virustotal', {}).get('score_deduction', 0)
-        weighted_score -= (vt_deduction * self.score_weights['virustotal'] / 100)
+        vt_score = self._normalize_to_score(vt_deduction, 40)
+        component_scores['virustotal'] = vt_score
+        weighted_sum += vt_score * (self.score_weights['virustotal'] / 100)
 
-        # ML Prediction contribution
+        # ML Prediction (max deduction: 30)
         ml_deduction = scores.get('ml_prediction', {}).get('score_deduction', 0)
-        weighted_score -= (ml_deduction * self.score_weights['ml_prediction'] / 100)
+        ml_score = self._normalize_to_score(ml_deduction, 30)
+        component_scores['ml_prediction'] = ml_score
+        weighted_sum += ml_score * (self.score_weights['ml_prediction'] / 100)
 
-        # Homoglyph contribution
+        # Homoglyphs (max deduction: 15)
         homo_deduction = scores.get('homoglyphs', {}).get('score_deduction', 0)
-        weighted_score -= (homo_deduction * self.score_weights['homoglyphs'] / 100)
+        homo_score = self._normalize_to_score(homo_deduction, 15)
+        component_scores['homoglyphs'] = homo_score
+        weighted_sum += homo_score * (self.score_weights['homoglyphs'] / 100)
 
-        # URL structure contribution
+        # URL Structure (max deduction: 30)
         structure_deduction = scores.get('url_structure', {}).get('score_deduction', 0)
-        weighted_score -= (structure_deduction * self.score_weights['url_structure'] / 100)
+        structure_score = self._normalize_to_score(structure_deduction, 30)
+        component_scores['url_structure'] = structure_score
+        weighted_sum += structure_score * (self.score_weights['url_structure'] / 100)
 
-        # Domain age contribution
+        # Domain Age (max deduction: 15)
         age_deduction = scores.get('domain_age', {}).get('score_deduction', 0)
-        weighted_score -= (age_deduction * self.score_weights['domain_age'] / 100)
+        age_score = self._normalize_to_score(age_deduction, 15)
+        component_scores['domain_age'] = age_score
+        weighted_sum += age_score * (self.score_weights['domain_age'] / 100)
 
-        # SSL/TLS contribution
+        # SSL/TLS (max deduction: 15)
         ssl_deduction = scores.get('ssl_tls', {}).get('score_deduction', 0)
-        weighted_score -= (ssl_deduction * self.score_weights['ssl_tls'] / 100)
+        ssl_score = self._normalize_to_score(ssl_deduction, 15)
+        component_scores['ssl_tls'] = ssl_score
+        weighted_sum += ssl_score * (self.score_weights['ssl_tls'] / 100)
 
-        return max(0, min(100, weighted_score))
+        return max(0, min(100, weighted_sum)), component_scores
 
     def analyze(self, url):
         """Main analysis function with comprehensive reporting"""
@@ -346,8 +386,8 @@ class URLSecurityAnalyzer:
             'ssl_tls': ssl_tls
         }
 
-        # Calculate final weighted score
-        final_score = self.calculate_final_score(scores)
+        # Calculate final weighted score with component breakdown
+        final_score, component_scores = self.calculate_final_score(scores)
         severity, risk_level = get_severity_level(final_score)
 
         # Generate summary
@@ -359,7 +399,8 @@ class URLSecurityAnalyzer:
             'final_score': round(final_score, 1),
             'severity': severity,
             'risk_level': risk_level,
-            'summary': summary
+            'summary': summary,
+            'component_scores': component_scores
         }
 
         # Generate detailed report
@@ -383,6 +424,11 @@ def analyze(url):
     print(f"SEVERITY: {report['severity']}")
     print(f"\nSUMMARY: {report['summary']}")
 
+    # Print component scores
+    print(f"\nCOMPONENT TRUST SCORES (weighted):")
+    for component, score in report.get('component_scores', {}).items():
+        print(f"  {component.replace('_', ' ').title()}: {score:.1f}/100")
+
     print("\n")
     print("DETAILED FINDINGS:")
     print("\n")
@@ -399,6 +445,3 @@ def analyze(url):
                     print(f"    {issue}")
 
     return report['final_score']
-
-
-
